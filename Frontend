@@ -1,0 +1,434 @@
+// FILE: package.json
+{
+  "name": "edutrust-dapp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.14.1",
+    "ethers": "^6.8.0",
+    "qrcode.react": "^1.0.1",
+    "react-qr-reader": "^3.0.0",
+    "jspdf": "^2.5.1",
+    "ipfs-http-client": "^60.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
+
+
+// FILE: index.html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EduTrust DApp (Demo)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+
+
+// FILE: src/main.jsx
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import App from './App'
+import './styles.css'
+
+createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>
+)
+
+
+// FILE: src/styles.css
+/* Simple styling - change or replace with Tailwind if desired */
+body { font-family: Inter, system-ui, Arial; margin:0; padding:0; background:#f5f7fb; color:#111827 }
+.container { max-width:1000px; margin:32px auto; padding:20px; background:white; border-radius:8px; box-shadow:0 6px 18px rgba(15,23,42,0.08) }
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px }
+.nav a { margin-right:12px; color:#2563eb; text-decoration:none }
+.form-row { margin-bottom:12px }
+.input { padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; width:100% }
+.button { padding:8px 14px; background:#2563eb; color:#fff; border:none; border-radius:6px; cursor:pointer }
+.table { width:100%; border-collapse:collapse }
+.table th, .table td { text-align:left; padding:8px; border-bottom:1px solid #e5e7eb }
+.card { padding:12px; border:1px solid #e6ecf2; border-radius:8px }
+
+
+// FILE: src/App.jsx
+import React, { useState, useEffect } from 'react'
+import { Routes, Route, Link, useNavigate } from 'react-router-dom'
+import AuthorityLogin from './components/AuthorityLogin'
+import CompanyLogin from './components/CompanyLogin'
+import AuthorityDashboard from './components/AuthorityDashboard'
+import CompanyDashboard from './components/CompanyDashboard'
+import Scanner from './components/Scanner'
+import PublicVerify from './components/PublicVerify'
+
+export default function App(){
+  return (
+    <div className="container">
+      <div className="header">
+        <h2>EduTrust — Demo DApp</h2>
+        <nav className="nav">
+          <Link to="/">Home</Link>
+          <Link to="/authority-login">Authority Login</Link>
+          <Link to="/company-login">Company Login</Link>
+          <Link to="/scan">Scanner</Link>
+        </nav>
+      </div>
+
+      <Routes>
+        <Route path="/" element={<Home/>} />
+        <Route path="/authority-login" element={<AuthorityLogin/>} />
+        <Route path="/company-login" element={<CompanyLogin/>} />
+        <Route path="/authority" element={<AuthorityDashboard/>} />
+        <Route path="/company" element={<CompanyDashboard/>} />
+        <Route path="/scan" element={<Scanner/>} />
+        <Route path="/verify" element={<PublicVerify/>} />
+      </Routes>
+    </div>
+  )
+}
+
+function Home(){
+  return (
+    <div>
+      <h3>Welcome to EduTrust Demo</h3>
+      <p>This demo implements core flows: Educational Authority login, certificate upload, company verification, and a QR scanner module. It uses localStorage to simulate on-chain storage. Replace storage calls with smart-contract interactions (ethers.js) and IPFS when integrating with a real blockchain.</p>
+    </div>
+  )
+}
+
+
+// FILE: src/utils/storage.js
+// Lightweight abstraction to simulate blockchain + IPFS storage using localStorage
+const KEY = 'edutrust_demo_certificates'
+
+export function readAll(){
+  const raw = localStorage.getItem(KEY)
+  return raw ? JSON.parse(raw) : []
+}
+
+export function save(cert){
+  const arr = readAll()
+  arr.push(cert)
+  localStorage.setItem(KEY, JSON.stringify(arr))
+}
+
+export function update(hash, patch){
+  const arr = readAll().map(c => c.hash === hash ? {...c, ...patch} : c)
+  localStorage.setItem(KEY, JSON.stringify(arr))
+}
+
+export function findByHash(hash){
+  return readAll().find(c => c.hash === hash)
+}
+
+
+// FILE: src/components/AuthorityLogin.jsx
+import React, {useState} from 'react'
+import { useNavigate } from 'react-router-dom'
+
+export default function AuthorityLogin(){
+  const [addr, setAddr] = useState('')
+  const nav = useNavigate()
+
+  function login(e){
+    e.preventDefault()
+    // In real app: authenticate via wallet signature (ethers.js)
+    if(!addr) return alert('Enter authority address (demo)')
+    localStorage.setItem('edutrust_authority', addr)
+    nav('/authority')
+  }
+
+  return (
+    <div>
+      <h3>Educational Authority Login (Demo)</h3>
+      <form onSubmit={login}>
+        <div className="form-row">
+          <input className="input" placeholder="Authority Address or Email (demo)" value={addr} onChange={e=>setAddr(e.target.value)} />
+        </div>
+        <button className="button">Login</button>
+      </form>
+    </div>
+  )
+}
+
+
+// FILE: src/components/AuthorityDashboard.jsx
+import React, {useState, useEffect} from 'react'
+import { save, readAll, update } from '../utils/storage'
+import { jsPDF } from 'jspdf'
+import QRCode from 'qrcode.react'
+
+export default function AuthorityDashboard(){
+  const [certs, setCerts] = useState([])
+  const [form, setForm] = useState({student:'', course:'', year:'2025', grade:'A'})
+
+  useEffect(()=>{ setCerts(readAll()) }, [])
+
+  function handleChange(e){ setForm({...form, [e.target.name]: e.target.value}) }
+
+  async function issue(e){
+    e.preventDefault()
+    // create a simple hash (demo only) — use keccak256 or ethers in real system
+    const hash = 'hash_' + Math.random().toString(36).slice(2,10)
+    const cert = {
+      hash,
+      student: form.student,
+      course: form.course,
+      year: form.year,
+      grade: form.grade,
+      issuer: localStorage.getItem('edutrust_authority') || 'demo-authority',
+      issuedAt: new Date().toISOString(),
+      revoked: false
+    }
+
+    // create a PDF with embedded QR code (verify url includes hash)
+    const verifyUrl = `${window.location.origin}/verify?hash=${hash}`
+    const pdf = new jsPDF()
+    pdf.setFontSize(18)
+    pdf.text('Certificate', 20, 30)
+    pdf.setFontSize(12)
+    pdf.text(`Student: ${cert.student}`, 20, 50)
+    pdf.text(`Course: ${cert.course}`, 20, 60)
+    pdf.text(`Grade: ${cert.grade}`, 20, 70)
+    pdf.text(`Issuer: ${cert.issuer}`, 20, 80)
+
+    // draw QR - jsPDF cannot directly draw react component; use dataURL approach
+    // we'll create a temporary canvas using QRCode.toDataURL in real integration
+
+    // For demo, skip embedding image and store verifyUrl in metadata
+    cert.verifyUrl = verifyUrl
+
+    save(cert)
+    setCerts(prev => [...prev, cert])
+    alert('Certificate issued (demo). Hash: ' + hash)
+  }
+
+  function revokeCertificate(h){
+    update(h, {revoked:true})
+    setCerts(readAll())
+  }
+
+  return (
+    <div>
+      <h3>Authority Dashboard</h3>
+      <div className="card" style={{marginBottom:12}}>
+        <h4>Issue Certificate</h4>
+        <form onSubmit={issue}>
+          <div className="form-row"><input name="student" className="input" placeholder="Student Name" value={form.student} onChange={handleChange} required/></div>
+          <div className="form-row"><input name="course" className="input" placeholder="Course" value={form.course} onChange={handleChange} required/></div>
+          <div className="form-row"><input name="grade" className="input" placeholder="Grade" value={form.grade} onChange={handleChange} required/></div>
+          <div className="form-row"><input name="year" className="input" placeholder="Year" value={form.year} onChange={handleChange} required/></div>
+          <button className="button">Issue Certificate</button>
+        </form>
+      </div>
+
+      <div>
+        <h4>Issued Certificates</h4>
+        <table className="table">
+          <thead><tr><th>Hash</th><th>Student</th><th>Course</th><th>Issued At</th><th>Actions</th></tr></thead>
+          <tbody>
+            {certs.map(c=> (
+              <tr key={c.hash}>
+                <td style={{fontFamily:'monospace'}}>{c.hash}</td>
+                <td>{c.student}</td>
+                <td>{c.course}</td>
+                <td>{new Date(c.issuedAt).toLocaleString()}</td>
+                <td>
+                  {!c.revoked && <button className="button" onClick={()=>revokeCertificate(c.hash)}>Revoke</button>}
+                  {c.revoked && <span style={{color:'red'}}>Revoked</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+
+// FILE: src/components/CompanyLogin.jsx
+import React, {useState} from 'react'
+import { useNavigate } from 'react-router-dom'
+
+export default function CompanyLogin(){
+  const [company, setCompany] = useState('')
+  const nav = useNavigate()
+  function login(e){
+    e.preventDefault()
+    if(!company) return alert('Enter company name (demo)')
+    localStorage.setItem('edutrust_company', company)
+    nav('/company')
+  }
+
+  return (
+    <div>
+      <h3>Company Login (Demo)</h3>
+      <form onSubmit={login}>
+        <div className="form-row">
+          <input className="input" placeholder="Company Name" value={company} onChange={e=>setCompany(e.target.value)} />
+        </div>
+        <button className="button">Login</button>
+      </form>
+    </div>
+  )
+}
+
+
+// FILE: src/components/CompanyDashboard.jsx
+import React, {useState, useEffect} from 'react'
+import { findByHash } from '../utils/storage'
+
+export default function CompanyDashboard(){
+  const [hash, setHash] = useState('')
+  const [result, setResult] = useState(null)
+
+  function verify(e){
+    e.preventDefault()
+    const res = findByHash(hash)
+    if(!res) return setResult({found:false})
+    setResult({...res, found:true})
+  }
+
+  return (
+    <div>
+      <h3>Company Dashboard - Verify Certificate</h3>
+      <form onSubmit={verify} style={{marginBottom:12}}>
+        <input className="input" placeholder="Enter certificate hash" value={hash} onChange={e=>setHash(e.target.value)} />
+        <div style={{marginTop:8}}>
+          <button className="button">Verify</button>
+        </div>
+      </form>
+
+      {result && !result.found && <div className="card">Certificate not found</div>}
+      {result && result.found && (
+        <div className="card">
+          <h4>Certificate Details</h4>
+          <p><strong>Student:</strong> {result.student}</p>
+          <p><strong>Course:</strong> {result.course}</p>
+          <p><strong>Issuer:</strong> {result.issuer}</p>
+          <p><strong>Issued At:</strong> {new Date(result.issuedAt).toLocaleString()}</p>
+          <p><strong>Status:</strong> {result.revoked ? 'Revoked' : 'Valid'}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// FILE: src/components/Scanner.jsx
+import React, {useState} from 'react'
+import { useNavigate } from 'react-router-dom'
+import { QrReader } from 'react-qr-reader'
+
+export default function Scanner(){
+  const [data, setData] = useState('No result')
+  const nav = useNavigate()
+
+  return (
+    <div>
+      <h3>Scanner Module</h3>
+      <div style={{maxWidth:480}}>
+        <QrReader
+          constraints={{ facingMode: 'environment' }}
+          onResult={(result, error) => {
+            if (!!result) {
+              setData(result?.text)
+              // parse URL param ?hash=...
+              try{
+                const u = new URL(result.text)
+                const h = u.searchParams.get('hash')
+                if(h) nav(`/verify?hash=${h}`)
+              }catch(e){
+                // not a url
+              }
+            }
+            if (!!error) {
+              // ignore
+            }
+          }}
+          style={{ width: '100%' }}
+        />
+      </div>
+      <p>Result: {data}</p>
+    </div>
+  )
+}
+
+
+// FILE: src/components/PublicVerify.jsx
+import React, {useEffect, useState} from 'react'
+import { findByHash } from '../utils/storage'
+import { useLocation } from 'react-router-dom'
+
+function useQuery(){ return new URLSearchParams(useLocation().search) }
+
+export default function PublicVerify(){
+  const q = useQuery()
+  const hashParam = q.get('hash')
+  const [result, setResult] = useState(null)
+
+  useEffect(()=>{
+    if(hashParam){
+      const r = findByHash(hashParam)
+      setResult(r || {notFound:true})
+    }
+  }, [hashParam])
+
+  if(!hashParam) return <div>Please provide a certificate hash in query like ?hash=...</div>
+
+  if(result && result.notFound) return <div className="card">Certificate not found or invalid.</div>
+
+  if(!result) return <div>Loading...</div>
+
+  return (
+    <div className="card">
+      <h4>Certificate Verification</h4>
+      <p><strong>Student:</strong> {result.student}</p>
+      <p><strong>Course:</strong> {result.course}</p>
+      <p><strong>Issuer:</strong> {result.issuer}</p>
+      <p><strong>Issued At:</strong> {new Date(result.issuedAt).toLocaleString()}</p>
+      <p><strong>Status:</strong> {result.revoked ? 'Revoked' : 'Valid'}</p>
+    </div>
+  )
+}
+
+
+// FILE: README.md
+# EduTrust Demo DApp (Frontend)
+
+This is a lightweight demo React DApp for EduTrust. It demonstrates core UI flows: Educational Authority login, Certificate issuance (demo), Company verification, QR scanning, and public verification.
+
+**Important:**
+- This demo uses `localStorage` to simulate on-chain storage and does not interact with a real blockchain. Replace the storage utilities in `src/utils/storage.js` with `ethers.js` calls to your smart contract and use IPFS for file storage in production.
+- Suggested next steps to connect to Ethereum:
+  - Install and configure `ethers`.
+  - Replace `save()` in AuthorityDashboard.issue with a function that uploads the PDF to IPFS (web3.storage or ipfs-http-client), computes the keccak256 hash using `ethers.utils`, and calls your smart contract `issueCertificate(hash, cid)` using a signer (MetaMask).
+  - For verification, use a read-only provider to call `verify(hash)` and display on the public page.
+
+**To run (dev):**
+```
+npm install
+npm run start
+```
+
+
+// END OF FILES
